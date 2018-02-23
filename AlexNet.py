@@ -2,9 +2,8 @@
 from __future__ import print_function
 
 from tensorflow.examples.tutorials.mnist import input_data
-print("开始下载mnist数据集")
-mnist = input_data.read_data_sets("E:\pycharm\work/MNIST_data", one_hot=True)
-print("mnist数据集下载成功")
+mnist = input_data.read_data_sets("/tmp/data", one_hot=True)
+
 import tensorflow as tf
 # 定义网络超参数
 learning_rate = 0.001
@@ -13,18 +12,15 @@ batch_size = 64
 display_step = 20
 
 # 定义网络参数
-n_input = 784 # 输入的维度 28 * 28
-n_classes = 10 # 标签的维度 0-9
-dropout = 0.8 # Dropout 的概率，输出的可能性
+n_input = 784 # 输入的维度
+n_classes = 10 # 标签的维度
+dropout = 0.75 # Dropout 的概率
 
 # 占位符输入
 x = tf.placeholder(tf.float32, [None, n_input])
 y = tf.placeholder(tf.float32, [None, n_classes])
 keep_prob = tf.placeholder(tf.float32)
-'''
-构建网络模型
-接下来定义AlexNet需要用到的卷积，池化和规范操作
-'''
+
 # 卷积操作
 def conv2d(name, l_input, w, b):
     return tf.nn.relu(tf.nn.bias_add(tf.nn.conv2d(l_input, w, strides=[1, 1, 1, 1], padding='SAME'),b), name=name)
@@ -36,68 +32,83 @@ def max_pool(name, l_input, k):
 # 归一化操作
 def norm(name, l_input, lsize=4):
     return tf.nn.lrn(l_input, lsize, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name=name)
-'''
-定义AlexNet的网络模型
-'''
+
+# 存储所有的网络参数
+weights = {
+    'wc1': tf.Variable(tf.random_normal([11, 11, 1, 64])),
+    'wc2': tf.Variable(tf.random_normal([5, 5, 64, 192])),
+    'wc3': tf.Variable(tf.random_normal([3, 3, 192, 384])),
+    'wc4': tf.Variable(tf.random_normal([3, 3, 384, 384])),
+    'wc5': tf.Variable(tf.random_normal([3, 3, 384, 256])),
+    'wd1': tf.Variable(tf.random_normal([4*4*256, 4096])),
+    'wd2': tf.Variable(tf.random_normal([4096, 4096])),
+    'out': tf.Variable(tf.random_normal([4096, 10]))
+}
+biases = {
+    'bc1': tf.Variable(tf.random_normal([64])),
+    'bc2': tf.Variable(tf.random_normal([192])),
+    'bc3': tf.Variable(tf.random_normal([384])),
+    'bc4': tf.Variable(tf.random_normal([384])),
+    'bc5': tf.Variable(tf.random_normal([256])),
+    'bd1': tf.Variable(tf.random_normal([4096])),
+    'bd2': tf.Variable(tf.random_normal([4096])),
+    'out': tf.Variable(tf.random_normal([n_classes]))
+}
+
 # 定义整个网络
 def alex_net(_X, _weights, _biases, _dropout):
     # 向量转为矩阵
     _X = tf.reshape(_X, shape=[-1, 28, 28, 1])
 
-    # 卷积层
+    # 第一层卷积
+    # 卷积
     conv1 = conv2d('conv1', _X, _weights['wc1'], _biases['bc1'])
-    # 下采样层
+    # 下采样
     pool1 = max_pool('pool1', conv1, k=2)
-    # 归一化层
+    # 归一化
     norm1 = norm('norm1', pool1, lsize=4)
-    # Dropout
-    norm1 = tf.nn.dropout(norm1, _dropout)
 
+    # 第二层卷积
     # 卷积
     conv2 = conv2d('conv2', norm1, _weights['wc2'], _biases['bc2'])
     # 下采样
     pool2 = max_pool('pool2', conv2, k=2)
     # 归一化
     norm2 = norm('norm2', pool2, lsize=4)
-    # Dropout
-    norm2 = tf.nn.dropout(norm2, _dropout)
 
+    # 第三层卷积
     # 卷积
     conv3 = conv2d('conv3', norm2, _weights['wc3'], _biases['bc3'])
-    # 下采样
-    pool3 = max_pool('pool3', conv3, k=2)
     # 归一化
-    norm3 = norm('norm3', pool3, lsize=4)
-    # Dropout
-    norm3 = tf.nn.dropout(norm3, _dropout)
+    norm3 = norm('norm3', conv3, lsize=4)
 
-    # 全连接层，先把特征图转为向量
-    dense1 = tf.reshape(norm3, [-1, _weights['wd1'].get_shape().as_list()[0]])
+    # 第四层卷积
+    # 卷积
+    conv4 = conv2d('conv4', norm3, _weights['wc4'], _biases['bc4'])
+    # 归一化
+    norm4 = norm('norm4', conv4, lsize=4)
+
+    # 第五层卷积
+    # 卷积
+    conv5 = conv2d('conv5', norm4, _weights['wc5'], _biases['bc5'])
+    # 下采样
+    pool5 = max_pool('pool5', conv5, k=2)
+    # 归一化
+    norm5 = norm('norm5', pool5, lsize=4)
+
+    # 全连接层1，先把特征图转为向量
+    dense1 = tf.reshape(norm5, [-1, _weights['wd1'].get_shape().as_list()[0]])
     dense1 = tf.nn.relu(tf.matmul(dense1, _weights['wd1']) + _biases['bd1'], name='fc1')
-    # 全连接层
+    dense1 = tf.nn.dropout(dense1, _dropout)
+
+    # 全连接层2
+    dense2 = tf.reshape(dense1, [-1, _weights['wd2'].get_shape().as_list()[0]])
     dense2 = tf.nn.relu(tf.matmul(dense1, _weights['wd2']) + _biases['bd2'], name='fc2') # Relu activation
+    dense2 = tf.nn.dropout(dense2, _dropout)
 
     # 网络输出层
     out = tf.matmul(dense2, _weights['out']) + _biases['out']
     return out
-
-# 存储所有的网络参数
-weights = {
-    'wc1': tf.Variable(tf.random_normal([3, 3, 1, 64])),
-    'wc2': tf.Variable(tf.random_normal([3, 3, 64, 128])),
-    'wc3': tf.Variable(tf.random_normal([3, 3, 128, 256])),
-    'wd1': tf.Variable(tf.random_normal([4*4*256, 1024])),
-    'wd2': tf.Variable(tf.random_normal([1024, 1024])),
-    'out': tf.Variable(tf.random_normal([1024, 10]))
-}
-biases = {
-    'bc1': tf.Variable(tf.random_normal([64])),
-    'bc2': tf.Variable(tf.random_normal([128])),
-    'bc3': tf.Variable(tf.random_normal([256])),
-    'bd1': tf.Variable(tf.random_normal([1024])),
-    'bd2': tf.Variable(tf.random_normal([1024])),
-    'out': tf.Variable(tf.random_normal([n_classes]))
-}
 
 # 构建模型
 pred = alex_net(x, weights, biases, keep_prob)
@@ -127,8 +138,8 @@ with tf.Session() as sess:
             acc = sess.run(accuracy, feed_dict={x: batch_xs, y: batch_ys, keep_prob: 1.})
             # 计算损失值
             loss = sess.run(cost, feed_dict={x: batch_xs, y: batch_ys, keep_prob: 1.})
-            print ("Iter " + str(step*batch_size) + ", Minibatch Loss= " + "{:.6f}".format(loss) + ", Training Accuracy = " + "{:.5f}".format(acc))
+            print ("Iter " + str(step*batch_size) + ", Minibatch Loss = " + "{:.6f}".format(loss) + ", Training Accuracy = " + "{:.5f}".format(acc))
         step += 1
-    print ("完成!")
+    print ("Optimization Finished!")
     # 计算测试精度
-    print ("测试准确率:", sess.run(accuracy, feed_dict={x: mnist.test.images[:256], y: mnist.test.labels[:256], keep_prob: 1.}))
+    print ("Testing Accuracy:", sess.run(accuracy, feed_dict={x: mnist.test.images[:256], y: mnist.test.labels[:256], keep_prob: 1.}))
